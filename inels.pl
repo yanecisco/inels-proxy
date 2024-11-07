@@ -5,6 +5,19 @@ use Data::Dumper;
 use Device::Modbus::RTU;
 use Device::Modbus::RTU::Client;
 
+my $sock;
+$SIG{ALRM} = sub {
+
+    printf "[%s] alarm \n", scalar localtime(time());
+
+    $sock = IO::Socket::IP->new(
+        PeerHost => "10.0.0.136",
+        PeerPort => "1111",
+	Timeout => 30,
+        #             Proto     => IPPROTO_TCP,
+    );
+
+};
 my $modbus;
 
 modbus_connect();
@@ -16,17 +29,24 @@ while(0) {
 	rele(1, 0);
 }
 
-
-
 #exit;
 
-
 while(1) {
-    my $sock = IO::Socket::IP->new(
-        PeerHost => "10.0.0.136",
-        PeerPort => "1111",
-        #             Proto     => IPPROTO_TCP,
-    ) or next;
+
+	if (!$sock) {
+		$sock = IO::Socket::IP->new(
+			PeerHost => "10.0.0.136",
+			PeerPort => "1111",
+			Timeout => 30,
+			#             Proto     => IPPROTO_TCP,
+		);
+		
+
+		if (!$sock) {
+			sleep(10); 
+			next; 
+		}
+	}
 
     printf "Connected to inels\n";
 
@@ -35,6 +55,9 @@ while(1) {
     while(1) { 
         my $data = $sock->recv(my $line, 4096);
 	my @lines = split(/\n/, $line);
+
+	alarm(30);
+
 	foreach my $line (@lines) {
 		chomp($line);
 		printf "[%s] read: %s -> %s\n", scalar localtime(time()), $data, $line;
@@ -52,20 +75,24 @@ while(1) {
 			$stav = 1 if $1 eq "05";
 			rele($x, $stav) if defined $stav;
 		}
-
-		if ($line =~ /EVENT (05|06) ([0-9]+),([0-9]+)/) {
+		#      EVENT,05,0x0203000b,1 dec
+		#      EVENT,06,0x02030018,0 dec
+		elsif ($line =~ /EVENT,(05|06),0x([0-9a-f]+),([0-9]+)/) {
 			#print "1: $1 2: $2/".hex($2)." 3: $3/".hex($3)."\n";
 			#printf "[%s] read: %s -> %s\n", scalar localtime(time()), $data, $line;
 
-			my $x = $2;#) - $sub;
+			my $x = hex($2) - $sub;
 			my $stav;
 			$stav = 0 if $1 eq "06";
 			$stav = 1 if $1 eq "05";
-			#rele($x, $stav) if defined $stav;
+			rele($x, $stav) if defined $stav;
 		}
-	}
-    }
 
+	}
+
+	alarm(0);
+
+    }
 
 }
 
